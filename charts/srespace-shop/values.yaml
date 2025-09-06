@@ -1,0 +1,81 @@
+namespace: srespace-shop
+
+# Images like: docker.io/noletengine/ecom-micro-<service>:<tag>
+imagePrefix: docker.io/noletengine/ecom-micro
+tag: latest
+replicas: 2
+
+serviceType: LoadBalancer           # change to NodePort if your cluster lacks LB
+
+postgres:
+  enabled: true
+  image: postgres:15-alpine
+  storage: 1Gi
+
+databases:
+  users-db:     { user: postgres, password: postgres, db: usersdb }
+  catalog-db:   { user: postgres, password: postgres, db: catalogdb }
+  inventory-db: { user: postgres, password: postgres, db: inventorydb }
+  payments-db:  { user: postgres, password: postgres, db: paymentsdb }
+  orders-db:    { user: postgres, password: postgres, db: ordersdb }
+
+services:
+  users:     { port: 3001, db: users-db }
+  catalog:   { port: 3002, db: catalog-db }
+  inventory: { port: 3003, db: inventory-db }
+  payments:  { port: 3005, db: payments-db }
+  orders:
+    port: 3004
+    db: orders-db
+    extraEnv:
+      - { name: PAYMENTS_URL,  value: "http://payments:3005" }
+      - { name: INVENTORY_URL, value: "http://inventory:3003" }
+      - { name: CATALOG_URL,   value: "http://catalog:3002" }
+
+resources:
+  requests: { cpu: "50m", memory: "128Mi" }
+  limits:   { cpu: "500m", memory: "512Mi" }
+
+gateway:
+  serviceType: LoadBalancer
+  # Nginx reverse proxy to services (keeps your compose-style paths)
+  nginxConf: |
+    events {}
+    http {
+      server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # No caching so inventory/catalog refresh reflect latest state
+        location /inventory/ { add_header Cache-Control "no-store"; proxy_pass http://inventory:3003/; proxy_set_header Host $host; }
+        location /catalog/   { add_header Cache-Control "no-store"; proxy_pass http://catalog:3002/;   proxy_set_header Host $host; }
+        location /users/     { proxy_pass http://users:3001/;    proxy_set_header Host $host; }
+        location /orders/    { proxy_pass http://orders:3004/;   proxy_set_header Host $host; }
+        location /payments/  { proxy_pass http://payments:3005/; proxy_set_header Host $host; }
+
+        location / { try_files $uri /index.html; }
+      }
+    }
+  # Minimal static page; you can replace with your frontend/index.html later.
+  indexHtml: |
+    <!doctype html><html><head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>srespace shop</title>
+    <style>body{font-family:system-ui;margin:0;background:#0f172a;color:#e5e7eb}
+    .wrap{max-width:960px;margin:24px auto;padding:0 16px}
+    .card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:16px;margin:12px 0}
+    button{background:#2563eb;color:#fff;border:0;border-radius:10px;padding:8px 12px;cursor:pointer}
+    a{color:#93c5fd}</style></head>
+    <body><div class="wrap">
+      <h2>srespace shop</h2>
+      <div class="card">
+        <p>Gateway is up. Try APIs:</p>
+        <ul>
+          <li><a href="/catalog/products">/catalog/products</a></li>
+          <li><a href="/inventory/inventory">/inventory/inventory</a></li>
+          <li><a href="/users/healthz">/users/healthz</a></li>
+        </ul>
+      </div>
+    </div></body></html>

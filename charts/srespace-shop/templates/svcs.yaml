@@ -1,0 +1,52 @@
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  replicas: {{ $.Values.replicas }}
+  selector: { matchLabels: { app: {{ $name }} } }
+  template:
+    metadata: { labels: { app: {{ $name }} } }
+    spec:
+      containers:
+      - name: {{ $name }}
+        image: {{ $.Values.imagePrefix }}-{{ $name }}:{{ $.Values.tag }}
+        imagePullPolicy: Always
+        ports: [{ containerPort: {{ $svc.port }} }]
+        env:
+        - { name: SERVICE_PORT, value: "{{ $svc.port }}" }
+        - { name: PGHOST,  value: "{{ $svc.db }}" }
+        - { name: PGPORT,  value: "5432" }
+        - name: PGUSER
+          valueFrom: { secretKeyRef: { name: {{ $svc.db }}-secret, key: POSTGRES_USER } }
+        - name: PGPASSWORD
+          valueFrom: { secretKeyRef: { name: {{ $svc.db }}-secret, key: POSTGRES_PASSWORD } }
+        - name: PGDATABASE
+          valueFrom: { secretKeyRef: { name: {{ $svc.db }}-secret, key: POSTGRES_DB } }
+        {{- with $svc.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        readinessProbe:
+          httpGet: { path: /healthz, port: {{ $svc.port }} }
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet: { path: /healthz, port: {{ $svc.port }} }
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+{{ toYaml $.Values.resources | indent 10 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  selector: { app: {{ $name }} }
+  ports: [{ port: {{ $svc.port }}, targetPort: {{ $svc.port }} }]
+{{- end }}

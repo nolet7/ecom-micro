@@ -1,0 +1,6 @@
+apiVersion: v2
+name: srespace-shop
+description: srespace shop microservices + gateway
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

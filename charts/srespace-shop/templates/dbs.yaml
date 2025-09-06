@@ -1,0 +1,54 @@
+{{- if .Values.postgres.enabled }}
+{{- range $dbName, $cfg := .Values.databases }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $dbName }}-secret
+  namespace: {{ $.Values.namespace }}
+type: Opaque
+stringData:
+  POSTGRES_USER: {{ $cfg.user | quote }}
+  POSTGRES_PASSWORD: {{ $cfg.password | quote }}
+  POSTGRES_DB: {{ $cfg.db | quote }}
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $dbName }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  serviceName: {{ $dbName }}
+  replicas: 1
+  selector: { matchLabels: { app: {{ $dbName }} } }
+  template:
+    metadata: { labels: { app: {{ $dbName }} } }
+    spec:
+      containers:
+      - name: pg
+        image: {{ $.Values.postgres.image }}
+        ports: [{ containerPort: 5432 }]
+        envFrom: [{ secretRef: { name: {{ $dbName }}-secret } }]
+        volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+        readinessProbe:
+          exec: { command: ["pg_isready","-U","{{ $cfg.user }}"] }
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata: { name: data }
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources: { requests: { storage: {{ $.Values.postgres.storage }} } }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $dbName }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  selector: { app: {{ $dbName }} }
+  ports: [{ port: 5432, targetPort: 5432 }]
+{{- end }}
+{{- end }}
