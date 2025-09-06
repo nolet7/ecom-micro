@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>srespace shop — guest</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <style>
+    :root{--bg:#0f172a;--card:#111827;--mut:#94a3b8;--fg:#e5e7eb;--ok:#16a34a;--err:#dc2626}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Inter,Arial;background:linear-gradient(120deg,#0b1022,#0f172a 60%,#0b1022);color:var(--fg)}
+    .wrap{max-width:1140px;margin:24px auto;padding:0 16px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h1{margin:0;font-size:22px} .mut{color:var(--mut)} h3{margin:6px 0 10px}
+    .grid{display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+    .card{grid-column:span 12;background:linear-gradient(180deg,#111827ee,#0b1022e6);border:1px solid #1f2937;border-radius:14px;padding:14px;box-shadow:0 10px 30px #0007}
+    @media(min-width:760px){.span6{grid-column:span 6}.span4{grid-column:span 4}.span8{grid-column:span 8}}
+    input,button{padding:8px 10px;border-radius:10px;border:1px solid #263143;background:#0b1222;color:var(--fg)}
+    button.primary{background:linear-gradient(90deg,#2563eb,#06b6d4);border:0;color:#fff;box-shadow:0 10px 24px #2563eb55;cursor:pointer}
+    button.ghost{background:#0b1222;border:1px solid #263143;cursor:pointer}
+    .list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+    .prod{border:1px solid #263143;border-radius:12px;padding:12px;background:#0b1222}
+    .prod h4{margin:0 0 6px} .price{color:#a7f3d0}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    table{width:100%;border-collapse:collapse} th,td{border-bottom:1px dashed #263143;padding:6px 4px;text-align:left}
+    .right{margin-left:auto} .badge{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid #334155}
+    .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:#f59e0b}
+    .link{color:#93c5fd;cursor:pointer}
+    .toolbar{display:flex;gap:10px;align-items:center}
+    .stat{display:inline-block;min-width:80px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>srespace shop</h1>
+        <div class="mut">Guest mode • simple storefront & traffic generator</div>
+      </div>
+      <div class="toolbar">
+        <label class="mut"><input id="autoRefresh" type="checkbox" style="vertical-align:-2px;margin-right:6px">Auto-refresh stock</label>
+        <button id="btnRefresh" class="ghost">Refresh</button>
+        <div class="mut">health: <span id="health" class="badge">checking…</span></div>
+      </div>
+    </header>
+
+    <!-- Quick data seeding -->
+    <section class="card span12">
+      <h3>Seed data</h3>
+      <div class="row">
+        <input id="bulkCount" type="number" min="1" step="1" value="24" title="how many products"/>
+        <input id="bulkMaxStock" type="number" min="0" step="1" value="50" title="max stock per item"/>
+        <button class="primary" id="btnBulk">Generate products+stock</button>
+        <button class="ghost" id="btnBigStock">Top-up big stock (1000 each)</button>
+        <span class="mut" id="seedMsg"></span>
+      </div>
+    </section>
+
+    <!-- Catalog -->
+    <section class="card span8">
+      <h3>Catalog</h3>
+      <div id="catalog" class="list"></div>
+      <div class="mut right link" id="refreshCatalog">refresh catalog</div>
+    </section>
+
+    <!-- Cart -->
+    <section class="card span4">
+      <h3>Cart</h3>
+      <table><thead><tr><th>Product</th><th>Qty</th><th>Price</th></tr></thead><tbody id="cartBody"></tbody></table>
+      <div class="row" style="margin-top:8px">
+        <div class="mut">Total: <b id="total">$0.00</b></div>
+        <button class="ghost" id="btnRefreshItems">Refresh items</button>
+        <button class="primary right" id="btnCheckout">Checkout</button>
+      </div>
+      <div id="orderResult" class="mut" style="margin-top:8px"></div>
+    </section>
+
+    <!-- Traffic generator -->
+    <section class="card span12">
+      <h3>Traffic generator (client-side)</h3>
+      <div class="row" style="gap:14px">
+        <label>rate rps <input id="tRate" type="number" min="1" value="5" style="width:90px"></label>
+        <label>duration s <input id="tDur" type="number" min="1" value="60" style="width:90px"></label>
+        <label>max items/order <input id="tItems" type="number" min="1" value="3" style="width:90px"></label>
+        <label>max qty/item <input id="tQty" type="number" min="1" value="2" style="width:90px"></label>
+        <button class="primary" id="tStart">Start</button>
+        <button class="ghost" id="tStop">Stop</button>
+        <span class="mut">user_id: <b id="uid">–</b></span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="stat">sent: <b id="stSent">0</b></span>
+        <span class="stat">ok: <b id="stOk">0</b></span>
+        <span class="stat">fail: <b id="stFail">0</b></span>
+        <span class="stat">p50(ms): <b id="stP50">-</b></span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (id)=>document.getElementById(id);
+    const LS_UID = 'srespace_uid';
+    const state = { user_id:null, products:[], stocks:new Map(), cart:[] };
+    let autoTimer=null;
+
+    const fmt = c => '$' + (c/100).toFixed(2);
+    const nouns=['Hoodie','Sneakers','T-Shirt','Bag','Cap','Jacket','Socks','Watch','Glasses','Shorts','Pants','Boots','Belt','Scarf','Gloves'];
+    const rint=(a,b)=>Math.floor(Math.random()*(b-a+1))+a, pick=a=>a[Math.floor(Math.random()*a.length)];
+
+    // ----- health -----
+    async function health(){
+      try{ const r = await fetch('/users/healthz',{cache:'no-store'}); $('health').textContent=r.ok?'ok':'down'; $('health').className='badge '+(r.ok?'ok':'err'); }
+      catch{ $('health').textContent='down'; $('health').className='badge err'; }
+    }
+
+    // ----- guest user (no login/logout) -----
+    async function ensureGuest(){
+      const saved = localStorage.getItem(LS_UID);
+      if(saved){ state.user_id = Number(saved); $('uid').textContent = state.user_id; return; }
+      const email = `guest-${Date.now()}-${Math.floor(Math.random()*1e6)}@test.local`;
+      const body = {email, name:'Guest', password:'x'};
+      const r = await fetch('/users/users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const j = await r.json().catch(()=>({}));
+      state.user_id = j.id || 1;
+      localStorage.setItem(LS_UID, String(state.user_id));
+      $('uid').textContent = state.user_id;
+    }
+
+    // ----- catalog & inventory -----
+    async function loadCatalog(){
+      const [prods, inv] = await Promise.all([
+        fetch('/catalog/products',{cache:'no-store'}).then(r=>r.json()),
+        fetch('/inventory/inventory',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])
+      ]);
+      state.products = prods;
+      state.stocks = new Map(inv.map(r=>[r.product_id, r.stock]));
+      renderCatalog();
+    }
+    function renderCatalog(){
+      const root = $('catalog'); root.innerHTML='';
+      state.products.forEach(p=>{
+        const stock = state.stocks.get(p.id) ?? 0;
+        const d=document.createElement('div'); d.className='prod';
+        d.innerHTML=`
+          <h4>${p.name}</h4>
+          <div class="price">${fmt(p.price_cents)}</div>
+          <div class="mut">In stock: <b id="stk-${p.id}">${stock}</b></div>
+          <div class="row" style="margin-top:8px">
+            <input type="number" min="1" value="1" style="width:80px" id="qty-${p.id}">
+            <button class="primary" data-id="${p.id}">Add to cart</button>
+          </div>`;
+        d.querySelector('button').onclick=()=>{
+          const qty=Math.max(1,Number($('qty-'+p.id).value||1));
+          addToCart(p, qty);
+        };
+        root.appendChild(d);
+      });
+    }
+    function refreshAll(){ health(); loadCatalog(); }
+    $('autoRefresh').addEventListener('change', (e)=>{ if(e.target.checked){ autoTimer=setInterval(loadCatalog, 5000); } else { clearInterval(autoTimer); autoTimer=null; } });
+
+    // ----- seed helpers -----
+    async function bulkSeed(){
+      const n=Number($('bulkCount').value||0); const max=Number($('bulkMaxStock').value||0);
+      if(!n){ $('seedMsg').textContent='enter a count > 0'; return; }
+      for(let i=0;i<n;i++){
+        const name=pick(nouns)+' #'+rint(1000,9999);
+        const price_cents=rint(599,14999);
+        const stock=rint(0,max);
+        const p=await (await fetch('/catalog/products',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,price_cents})})).json();
+        await fetch('/inventory/inventory/seed',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({product_id:p.id,stock})});
+      }
+      $('seedMsg').textContent=`Seeded ${n} products`;
+      await loadCatalog();
+    }
+    async function bigStock(){
+      // top-up all products to 1000 stock
+      await Promise.all(state.products.map(p=>
+        fetch('/inventory/inventory/seed',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({product_id:p.id,stock:1000})})
+      ));
+      $('seedMsg').textContent='All products set to stock=1000';
+      await loadCatalog();
+    }
+
+    // ----- cart & checkout -----
+    function addToCart(p, qty){
+      const stock = state.stocks.get(p.id) ?? 0;
+      const existing = state.cart.find(i=>i.product_id===p.id);
+      const current = existing ? existing.qty : 0;
+      const target = current + qty;
+      const allowed = Math.min(target, stock);
+      if(allowed <= current){ $('orderResult').innerHTML = `<span class="warn">Only ${stock} in stock for ${p.name}</span>`; return; }
+      if(existing) existing.qty = allowed; else state.cart.push({ product_id:p.id, name:p.name, price_cents:p.price_cents, qty: allowed });
+      renderCart();
+    }
+    function renderCart(){
+      const tbody=$('cartBody'); tbody.innerHTML=''; let total=0;
+      state.cart.forEach(it=>{ total+=it.price_cents*it.qty; const tr=document.createElement('tr'); tr.innerHTML=`<td>${it.name}</td><td>${it.qty}</td><td>${fmt(it.price_cents*it.qty)}</td>`; tbody.appendChild(tr); });
+      $('total').textContent=fmt(total);
+    }
+    async function adjustCartIfNeeded(){
+      if(!state.cart.length) return {ok:true};
+      const items=state.cart.map(i=>({product_id:i.product_id, qty:i.qty}));
+      const r=await fetch('/inventory/inventory/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({items})});
+      if(r.ok) return {ok:true};
+      const j=await r.json().catch(()=>({missing:[]}));
+      let changed=false;
+      (j.missing||[]).forEach(m=>{
+        const it=state.cart.find(x=>x.product_id===m.product_id);
+        if(!it) return;
+        if(m.available<=0){ state.cart = state.cart.filter(x=>x.product_id!==m.product_id); changed=true; }
+        else if(it.qty>m.available){ it.qty=m.available; changed=true; }
+      });
+      if(changed) renderCart();
+      return {ok:false};
+    }
+    async function refreshItems(){ await loadCatalog(); await adjustCartIfNeeded(); $('orderResult').innerHTML='<span class="ok">Items refreshed.</span>'; }
+    async function checkout(){
+      if(!state.user_id){ await ensureGuest(); }
+      if(!state.cart.length){ alert('Cart is empty'); return; }
+      const pre=await adjustCartIfNeeded();
+      if(!pre.ok){ $('orderResult').innerHTML='<span class="warn">Cart adjusted to stock. Click Checkout again.</span>'; return; }
+      const items = state.cart.map(i=>({product_id:i.product_id, qty:i.qty}));
+      const body = { user_id:state.user_id, items, idempotency_key:'ui-'+Date.now()+'-'+Math.random().toString(16).slice(2) };
+      const t0=performance.now();
+      const res = await fetch('/orders/orders',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const t1=performance.now();
+      const txt = await res.text();
+      try{
+        const j=JSON.parse(txt);
+        if(res.ok){ $('orderResult').innerHTML=`<span class="ok">Order #${j.id} ${j.status}</span>`; state.cart=[]; renderCart(); await loadCatalog(); }
+        else if(j && j.error==='out_of_stock'){ await loadCatalog(); await adjustCartIfNeeded(); $('orderResult').innerHTML='<span class="warn">Stock changed; cart adjusted. Checkout again.</span>'; }
+        else { $('orderResult').innerHTML=`<span class="err">${j.error||txt}</span>`; }
+      }catch{ $('orderResult').innerHTML=`<span class="err">${txt}</span>`; }
+      updateLatency(t1-t0);
+    }
+
+    // ----- traffic generator -----
+    let stopFlag=false, latSamples=[];
+    function updateLatency(ms){ latSamples.push(ms); if(latSamples.length>1000) latSamples.shift();
+      const sorted=[...latSamples].sort((a,b)=>a-b); const p50=sorted.length?sorted[Math.floor(sorted.length*0.5)]:NaN;
+      $('stP50').textContent = isNaN(p50)?'-':Math.round(p50);
+    }
+
+    async function makeRandomOrder(maxItems=3, maxQty=2){
+      if(!state.products.length) await loadCatalog();
+      const items=[]; const pool = state.products.filter(p=>(state.stocks.get(p.id)||0)>0);
+      const count = Math.min(rint(1, maxItems), pool.length||1);
+      for(let i=0;i<count;i++){
+        const p = pick(pool);
+        const qty = rint(1, maxQty);
+        items.push({product_id:p.id, qty});
+      }
+      const body={ user_id:state.user_id, items, idempotency_key:'lg-'+Date.now()+'-'+Math.random().toString(16).slice(2) };
+      const t0=performance.now();
+      const r = await fetch('/orders/orders',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const t1=performance.now(); updateLatency(t1-t0);
+      if(!r.ok) throw new Error('order_'+r.status);
+    }
+
+    function startTraffic(){
+      stopFlag=false; $('stSent').textContent='0'; $('stOk').textContent='0'; $('stFail').textContent='0'; latSamples=[];
+      const rate=Number($('tRate').value||1);
+      const dur=Number($('tDur').value||10);
+      const maxItems=Number($('tItems').value||3);
+      const maxQty=Number($('tQty').value||2);
+      const interval = Math.max(5, 1000/rate); // ms between fires
+      const end = Date.now() + dur*1000;
+      let sent=0, ok=0, fail=0;
+
+      const tick = async () => {
+        if (stopFlag || Date.now() > end) return;
+        sent++; $('stSent').textContent=String(sent);
+        makeRandomOrder(maxItems, maxQty).then(()=>{ ok++; $('stOk').textContent=String(ok);})
+          .catch(()=>{ fail++; $('stFail').textContent=String(fail);});
+        setTimeout(tick, interval);
+      };
+
+      // ensure guest & warm data
+      ensureGuest().then(async ()=>{
+        if(!state.products.length){ await bulkSeed(); }
+        tick();
+        // also spin a few in parallel to better approximate rate
+        for(let i=1;i<Math.min(rate,16);i++) setTimeout(tick, i*10);
+      });
+    }
+    function stopTraffic(){ stopFlag=true; }
+
+    // ----- wire up -----
+    $('btnRefresh').onclick = refreshAll;
+    $('refreshCatalog').onclick = loadCatalog;
+    $('btnCheckout').onclick = checkout;
+    $('btnRefreshItems').onclick = refreshItems;
+    $('btnBulk').onclick = bulkSeed;
+    $('btnBigStock').onclick = bigStock;
+    $('tStart').onclick = startTraffic;
+    $('tStop').onclick  = stopTraffic;
+
+    // init
+    ensureGuest().then(()=>{ $('uid').textContent=state.user_id; });
+    health(); loadCatalog();
+  </script>
+</body>
+</html>

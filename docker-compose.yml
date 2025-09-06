@@ -1,0 +1,129 @@
+name: ecom-micro
+services:
+  api-gateway:
+    image: nginx:1.25-alpine
+    container_name: api-gateway
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "${HOST_PORT:-18081}:80"     # <- host port 18081 by default
+    depends_on:
+      - users
+      - catalog
+      - inventory
+      - orders
+      - payments
+    networks: [ecom]
+
+  # ---------- USERS ----------
+  users-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: usersdb
+    ports: ["54321:5432"]
+    networks: [ecom]
+  users:
+    build: ./services/users
+    environment:
+      SERVICE_PORT: "3001"
+      PGHOST: users-db
+      PGPORT: "5432"
+      PGDATABASE: usersdb
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    depends_on: [users-db]
+    networks: [ecom]
+
+  # ---------- CATALOG ----------
+  catalog-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: catalogdb
+    ports: ["54322:5432"]
+    networks: [ecom]
+  catalog:
+    build: ./services/catalog
+    environment:
+      SERVICE_PORT: "3002"
+      PGHOST: catalog-db
+      PGPORT: "5432"
+      PGDATABASE: catalogdb
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    depends_on: [catalog-db]
+    networks: [ecom]
+
+  # ---------- INVENTORY ----------
+  inventory-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inventorydb
+    ports: ["54323:5432"]
+    networks: [ecom]
+  inventory:
+    build: ./services/inventory
+    environment:
+      SERVICE_PORT: "3003"
+      PGHOST: inventory-db
+      PGPORT: "5432"
+      PGDATABASE: inventorydb
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    depends_on: [inventory-db]
+    networks: [ecom]
+
+  # ---------- PAYMENTS ----------
+  payments-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: paymentsdb
+    ports: ["54324:5432"]
+    networks: [ecom]
+  payments:
+    build: ./services/payments
+    environment:
+      SERVICE_PORT: "3005"
+      PGHOST: payments-db
+      PGPORT: "5432"
+      PGDATABASE: paymentsdb
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PAYMENTS_MODE: "random"    # always_success | always_fail | random
+    depends_on: [payments-db]
+    networks: [ecom]
+
+  # ---------- ORDERS (orchestrator) ----------
+  orders-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ordersdb
+    ports: ["54325:5432"]
+    networks: [ecom]
+  orders:
+    build: ./services/orders
+    environment:
+      SERVICE_PORT: "3004"
+      PGHOST: orders-db
+      PGPORT: "5432"
+      PGDATABASE: ordersdb
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      CATALOG_URL: http://catalog:3002
+      INVENTORY_URL: http://inventory:3003
+      PAYMENTS_URL: http://payments:3005
+    depends_on: [orders-db, catalog, inventory, payments]
+    networks: [ecom]
+
+networks:
+  ecom: {}

@@ -1,0 +1,10 @@
+node_modules/
+npm-debug.log*
+*.log
+.env
+dist/
+build/
+.DS_Store
+# editor junk
+.vscode/
+.idea/
